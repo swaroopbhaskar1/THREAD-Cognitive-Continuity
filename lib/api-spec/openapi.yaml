@@ -1,0 +1,618 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: THREAD continuity API
+servers:
+  - url: /api
+paths:
+  /operations/client-signal:
+    post:
+      operationId: reportClientSignal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientSignalInput" }
+      responses:
+        "202":
+          description: Accepted or deduplicated owner-scoped connection signal, not proof of a server outage
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted]
+                properties:
+                  accepted: { type: boolean }
+        "401":
+          description: Authentication required
+  /reviews:
+    get:
+      operationId: listReviews
+      parameters:
+        - { name: missionId, in: query, schema: { type: string } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Owner-scoped schedules with server-clock counts, earliest due first
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewPage" }
+  /checkpoints/{id}/review:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: ensureCheckpointReview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReviewStartInput" }
+      responses:
+        "200":
+          description: Existing or newly scheduled review; one schedule per checkpoint
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewSchedule" }
+  /reviews/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: getReview
+      responses:
+        "200":
+          description: Schedule and current attempt; reference withheld until answer is committed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewDetail" }
+  /reviews/{id}/start:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: startReview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReviewStartInput" }
+      responses:
+        "200":
+          description: Frozen retrieval question and attempt; no reference until answer committed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewDetail" }
+  /recall-attempts/{id}/answer:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: submitRecallAnswer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecallAnswerInput" }
+      responses:
+        "200":
+          description: Committed answer and revealed saved reference, not an objectively verified answer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewDetail" }
+  /recall-attempts/{id}/rating:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: rateRecallAttempt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecallRatingInput" }
+      responses:
+        "200":
+          description: Immutable self-rating and atomically advanced schedule
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewDetail" }
+  /recall-history:
+    get:
+      operationId: listRecallAttempts
+      parameters:
+        - { name: reviewId, in: query, required: true, schema: { type: string } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Preserved historical attempts, newest first; pending references withheld
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecallAttemptPage" }
+  /execution/history:
+    get:
+      operationId: getExecutionHistory
+      parameters:
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: All owner-scoped persisted steps, newest first, cursor-paginated without a silent history cutoff
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExecutionHistoryPage" }
+  /checkpoints/{id}/intelligence:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: getCheckpointIntelligence
+      responses:
+        "200":
+          description: Separate AI processing state and validated enhancement, never original content
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckpointIntelligence" }
+    post:
+      operationId: requestCheckpointIntelligence
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EnhancementInput" }
+      responses:
+        "200":
+          description: Durable job, uniquely keyed by checkpoint; duplicates return existing job
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckpointIntelligence" }
+  /events/stream:
+    get:
+      operationId: streamExecution
+      summary: Owner-scoped committed workflow updates over SSE
+      parameters:
+        - name: after
+          in: query
+          schema: { type: string, pattern: "^[0-9]+$" }
+          description: Durable update cursor for historical backfill; Last-Event-ID takes precedence.
+      responses:
+        "200":
+          description: SSE execution frames with id cursor and JSON ExecutionUpdate data; heartbeat comments; reconnect with Last-Event-ID.
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "401":
+          description: Authentication required
+  /healthz:
+    get:
+      operationId: healthCheck
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthStatus" }
+  /missions:
+    get:
+      operationId: listMissions
+      responses:
+        "200":
+          description: Missions
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Mission" } }
+    post:
+      operationId: createMission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MissionInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Mission" }
+  /missions/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: getMission
+      responses:
+        "200":
+          description: Workspace
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workspace" }
+  /missions/{id}/draft:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    put:
+      operationId: saveDraft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DraftInput" }
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Draft" }
+  /missions/{id}/checkpoints:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: createCheckpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CheckpointInput" }
+      responses:
+        "201":
+          description: Preserved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Checkpoint" }
+  /missions/{id}/resumptions:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: startResumption
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResumptionInput" }
+      responses:
+        "201":
+          description: Resumption
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Resumption" }
+  /resumptions/{id}/action:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: recordMeaningfulAction
+      responses:
+        "200":
+          description: Recorded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Resumption" }
+  /summary:
+    get:
+      operationId: getSummary
+      responses:
+        "200":
+          description: Learning activity
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Summary" }
+  /workflows:
+    get:
+      operationId: listWorkflows
+      responses:
+        "200":
+          description: Execution history
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Workflow" } }
+  /workflows/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: getWorkflow
+      responses:
+        "200":
+          description: Owner-scoped persisted workflow, including historical runs
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workflow" }
+  /workflows/{id}/events:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: getWorkflowEvents
+      responses:
+        "200":
+          description: Persisted events
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/ExecutionEvent" } }
+components:
+  schemas:
+    ClientSignalInput:
+      type: object
+      additionalProperties: false
+      required: [kind, consecutiveFailures]
+      properties:
+        kind: { type: string, enum: [sse_reconnect_failed] }
+        consecutiveFailures: { type: integer, minimum: 3, maximum: 100 }
+    ReviewStartInput:
+      type: object
+      additionalProperties: false
+      required: [requestKey]
+      properties:
+        requestKey: { type: string, minLength: 8, maxLength: 100 }
+    RecallAnswerInput:
+      type: object
+      additionalProperties: false
+      required: [requestKey, answer]
+      properties:
+        requestKey: { type: string, minLength: 8, maxLength: 100 }
+        answer: { type: string, minLength: 1, maxLength: 20000 }
+    RecallDifficulty:
+      type: string
+      enum: [again, hard, good, easy]
+    RecallRatingInput:
+      type: object
+      additionalProperties: false
+      required: [requestKey, difficulty]
+      properties:
+        requestKey: { type: string, minLength: 8, maxLength: 100 }
+        difficulty: { $ref: "#/components/schemas/RecallDifficulty" }
+    ReviewSchedule:
+      type: object
+      required: [id, missionId, missionTitle, checkpointId, dueAt, intervalMinutes, repetitions, lapses, ease, version, answeredCount, ratedCount, lastReviewedAt, algorithmVersion]
+      properties:
+        id: { type: string }
+        missionId: { type: string }
+        missionTitle: { type: string }
+        checkpointId: { type: string }
+        checkpointCreatedAt: { type: string }
+        checkpointNextAction: { type: string }
+        dueAt: { type: string }
+        intervalMinutes: { type: integer }
+        repetitions: { type: integer }
+        lapses: { type: integer }
+        ease: { type: number }
+        version: { type: integer }
+        answeredCount: { type: integer }
+        ratedCount: { type: integer }
+        lastReviewedAt: { type: [string, "null"] }
+        algorithmVersion: { type: string }
+    ReviewCounts:
+      type: object
+      required: [overdue, upcoming, answered, rated]
+      properties:
+        overdue: { type: integer }
+        upcoming: { type: integer }
+        answered: { type: integer }
+        rated: { type: integer }
+    ReviewPage:
+      type: object
+      required: [items, nextCursor, serverNow, counts]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/ReviewSchedule" } }
+        nextCursor: { type: [string, "null"] }
+        serverNow: { type: string }
+        counts: { $ref: "#/components/schemas/ReviewCounts" }
+    RecallReference:
+      type: object
+      required: [understanding, questions, reasoning, notes, nextAction, aiSummary]
+      properties:
+        understanding: { type: string }
+        questions: { type: string }
+        reasoning: { type: string }
+        notes: { type: string }
+        nextAction: { type: string }
+        aiSummary: { type: [string, "null"] }
+    RecallAttempt:
+      type: object
+      required: [id, reviewId, scheduleVersion, question, questionSource, answer, difficulty, reference, startedAt, answeredAt, ratedAt, nextDueAt, intervalMinutes, algorithmVersion, workflowId]
+      properties:
+        id: { type: string }
+        reviewId: { type: string }
+        scheduleVersion: { type: integer }
+        question: { type: string }
+        questionSource: { type: string, enum: [ai, fallback] }
+        answer: { type: [string, "null"] }
+        difficulty: { anyOf: [{ $ref: "#/components/schemas/RecallDifficulty" }, { type: "null" }] }
+        reference: { anyOf: [{ $ref: "#/components/schemas/RecallReference" }, { type: "null" }] }
+        startedAt: { type: string }
+        answeredAt: { type: [string, "null"] }
+        ratedAt: { type: [string, "null"] }
+        nextDueAt: { type: [string, "null"] }
+        intervalMinutes: { type: [integer, "null"] }
+        algorithmVersion: { type: string }
+        workflowId: { type: string }
+    ReviewDetail:
+      type: object
+      required: [schedule, session, serverNow]
+      properties:
+        schedule: { $ref: "#/components/schemas/ReviewSchedule" }
+        session: { anyOf: [{ $ref: "#/components/schemas/RecallAttempt" }, { type: "null" }] }
+        serverNow: { type: string }
+    RecallAttemptPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/RecallAttempt" } }
+        nextCursor: { type: [string, "null"] }
+    ExecutionHistoryEntry:
+      type: object
+      required: [event, operation]
+      properties:
+        event: { $ref: "#/components/schemas/ExecutionEvent" }
+        operation: { type: string }
+    ExecutionHistoryPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/ExecutionHistoryEntry" } }
+        nextCursor: { type: [string, "null"] }
+    EnhancementInput:
+      type: object
+      additionalProperties: false
+      required: [simulateFailure]
+      properties:
+        simulateFailure: { type: boolean }
+    Citation:
+      type: object
+      additionalProperties: false
+      required: [field, quote]
+      properties:
+        field: { type: string, enum: [notes, understanding, questions, reasoning, nextAction] }
+        quote: { type: string }
+    GroundedText:
+      type: object
+      additionalProperties: false
+      required: [text, evidence]
+      properties:
+        text: { type: string }
+        evidence: { type: array, items: { $ref: "#/components/schemas/Citation" } }
+    Intelligence:
+      type: object
+      additionalProperties: false
+      required: [summary, retrievalQuestion, nextAction]
+      properties:
+        summary: { $ref: "#/components/schemas/GroundedText" }
+        retrievalQuestion: { $ref: "#/components/schemas/GroundedText" }
+        nextAction: { $ref: "#/components/schemas/GroundedText" }
+    CheckpointIntelligence:
+      type: object
+      required: [jobId, checkpointId, workflowId, status, attempts, maxAttempts, nextAttemptAt, failureInjection, lastError, result, source, updatedAt]
+      properties:
+        jobId: { type: [string, "null"] }
+        checkpointId: { type: string }
+        workflowId: { type: [string, "null"] }
+        status: { type: string, enum: [not_requested, queued, running, retry_wait, succeeded, fallback] }
+        attempts: { type: integer }
+        maxAttempts: { type: integer }
+        nextAttemptAt: { type: [string, "null"] }
+        failureInjection: { type: boolean }
+        lastError: { type: [string, "null"] }
+        result: { anyOf: [{ $ref: "#/components/schemas/Intelligence" }, { type: "null" }] }
+        source: { type: string, enum: [ai, fallback] }
+        updatedAt: { type: [string, "null"] }
+    ExecutionUpdate:
+      type: object
+      required: [cursor, workflow, events]
+      properties:
+        cursor: { type: string }
+        workflow: { $ref: "#/components/schemas/Workflow" }
+        events: { type: array, items: { $ref: "#/components/schemas/ExecutionEvent" } }
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string }
+    MissionInput:
+      type: object
+      required: [title, subject, goal, requestKey]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 160 }
+        subject: { type: string, maxLength: 100 }
+        goal: { type: string, maxLength: 2000 }
+        requestKey: { type: string, minLength: 8, maxLength: 100 }
+    Mission:
+      type: object
+      required: [id, title, subject, goal, createdAt, updatedAt, checkpointCount, nextAction]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        subject: { type: string }
+        goal: { type: string }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+        checkpointCount: { type: integer }
+        nextAction: { type: string }
+    DraftInput:
+      type: object
+      required: [notes, understanding, questions, reasoning, nextAction, version]
+      properties:
+        notes: { type: string, maxLength: 100000 }
+        understanding: { type: string, maxLength: 20000 }
+        questions: { type: string, maxLength: 20000 }
+        reasoning: { type: string, maxLength: 20000 }
+        nextAction: { type: string, maxLength: 4000 }
+        version: { type: integer, minimum: 0 }
+    Draft:
+      allOf:
+        - { $ref: "#/components/schemas/DraftInput" }
+        - type: object
+          required: [savedAt]
+          properties:
+            savedAt: { type: string }
+    CheckpointInput:
+      allOf:
+        - { $ref: "#/components/schemas/DraftInput" }
+        - type: object
+          required: [requestKey, simulateFailure]
+          properties:
+            requestKey: { type: string, minLength: 8, maxLength: 100 }
+            simulateFailure: { type: boolean }
+    Checkpoint:
+      type: object
+      required: [id, missionId, notes, understanding, questions, reasoning, nextAction, recallQuestion, createdAt, source, workflowId]
+      properties:
+        enhancementStatus: { type: string }
+        id: { type: string }
+        missionId: { type: string }
+        notes: { type: string }
+        understanding: { type: string }
+        questions: { type: string }
+        reasoning: { type: string }
+        nextAction: { type: string }
+        recallQuestion: { type: string }
+        createdAt: { type: string }
+        source: { type: string }
+        workflowId: { type: string }
+    Workspace:
+      type: object
+      required: [mission, draft, checkpoints]
+      properties:
+        mission: { $ref: "#/components/schemas/Mission" }
+        draft: { $ref: "#/components/schemas/Draft" }
+        checkpoints: { type: array, items: { $ref: "#/components/schemas/Checkpoint" } }
+    ResumptionInput:
+      type: object
+      required: [obstacle, recallAnswer, requestKey]
+      properties:
+        obstacle: { type: string, enum: [lost_context, overwhelmed, uncertain, ready] }
+        recallAnswer: { type: string, maxLength: 20000 }
+        requestKey: { type: string, minLength: 8, maxLength: 100 }
+    Resumption:
+      type: object
+      required: [id, missionId, obstacle, strategy, startedAt, firstActionMs]
+      properties:
+        id: { type: string }
+        missionId: { type: string }
+        obstacle: { type: string }
+        strategy: { type: string }
+        startedAt: { type: string }
+        firstActionMs: { type: [number, "null"] }
+    Summary:
+      type: object
+      required: [missions, checkpoints, resumptions, recentActivity]
+      properties:
+        missions: { type: integer }
+        checkpoints: { type: integer }
+        resumptions: { type: integer }
+        recentActivity: { type: array, items: { $ref: "#/components/schemas/Workflow" } }
+    Workflow:
+      type: object
+      required: [id, operation, status, createdAt, durationMs, missionId]
+      properties:
+        id: { type: string }
+        operation: { type: string }
+        status: { type: string }
+        createdAt: { type: string }
+        durationMs: { type: number }
+        missionId: { type: [string, "null"] }
+    ExecutionEvent:
+      type: object
+      required: [id, workflowId, sequence, name, component, outcome, durationMs, createdAt, details, attempt, fallback, sourceComponent, destinationComponent]
+      properties:
+        id: { type: string }
+        workflowId: { type: string }
+        sequence: { type: integer }
+        name: { type: string }
+        component: { type: string, enum: [browser, server, database, ai] }
+        sourceComponent: { type: string, enum: [browser, server, database, ai, unknown] }
+        destinationComponent: { type: string, enum: [browser, server, database, ai, unknown] }
+        outcome: { type: string }
+        durationMs: { type: number }
+        createdAt: { type: string }
+        details: { type: string }
+        attempt: { type: integer }
+        fallback: { type: boolean }

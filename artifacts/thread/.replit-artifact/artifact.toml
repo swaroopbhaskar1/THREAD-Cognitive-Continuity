@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "THREAD"
+description = "A cognitive continuity workspace that preserves learning context across interruptions with reliable checkpoints and authentic execution observability."
+version = "1.0.0"
+id = "artifacts/thread"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24644
+
+[services.development]
+run = "pnpm --filter @workspace/thread run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/thread", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/thread/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24644"
+BASE_PATH = "/"
